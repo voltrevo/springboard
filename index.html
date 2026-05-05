@@ -1,7 +1,11 @@
 <!doctype html>
 <title>springboard</title>
 <script>
-const CONFIG_KEY = 'springboard:config'
+(() => {
+
+const DB_NAME = 'springboard';
+const STORE = 'kv';
+const CONFIG_KEY = 'config';
 
 const STYLES = `
   body {
@@ -66,84 +70,117 @@ const STYLES = `
     word-break: break-all;
   }
   pre:empty { display: none; }
-`
+`;
 
-const sha256hex = async text => {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text))
-  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('')
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }
 
-const log = msg => {
-  const out = document.getElementById('out')
-  if (out) out.append(msg + '\n')
+async function idbGet(key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(STORE).objectStore(STORE).get(key);
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
 }
 
-const tearDownUI = () => {
-  document.getElementById('springboard-style')?.remove()
-  document.body.innerHTML = ''
+async function idbSet(key, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, 'readwrite');
+    tx.objectStore(STORE).put(value, key);
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error);
+  });
 }
 
-const execute = source => {
-  tearDownUI()
-  new Function(source)()
+async function sha256hex(text) {
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
+  return [...new Uint8Array(digest)].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
-const springboard = async config => {
-  const [hash, ...urls] = config.trim().split(/\s+/)
+function log(msg) {
+  const out = document.getElementById('out');
+  if (out) out.append(msg + '\n');
+}
 
-  const cached = localStorage[hash]
-  if (cached) return execute(cached)
+function tearDownUI() {
+  document.getElementById('springboard-style')?.remove();
+  document.body.innerHTML = '';
+}
 
-  const shuffled = urls.slice().sort(() => Math.random() - 0.5)
-  let matched = false
-  let nextIndex = 0
+function execute(source, input) {
+  tearDownUI();
+  setTimeout(() => new Function('input', source)(input), 0);
+}
 
-  const attempt = async url => {
-    log('try ' + url)
-    try {
-      const body = await (await fetch(url)).text()
-      if (matched) return
-      if (await sha256hex(body) !== hash) return log('bad ' + url)
-      matched = true
-      localStorage[hash] = body
-      localStorage[CONFIG_KEY] = config
-      log('match ' + url)
-      execute(body)
-    } catch {
-      log('err ' + url)
-    }
+async function tryResolver(url, sha256, configText, input, state) {
+  log('try ' + url);
+  try {
+    const body = await (await fetch(url)).text();
+    if (state.matched) return;
+    if (await sha256hex(body) !== sha256) return log('bad ' + url);
+    state.matched = true;
+    await idbSet(sha256, body);
+    await idbSet(CONFIG_KEY, configText);
+    log('match ' + url);
+    execute(body, input);
+  } catch {
+    log('err ' + url);
   }
-
-  const launchNext = () => {
-    if (matched || nextIndex >= shuffled.length) return
-    attempt(shuffled[nextIndex++])
-    setTimeout(launchNext, 3000)
-  }
-  launchNext()
 }
 
-const showUI = () => {
-  const style = document.createElement('style')
-  style.id = 'springboard-style'
-  style.textContent = STYLES
-  document.head.append(style)
+async function springboard(configText) {
+  const { sha256, resolvers, input } = JSON.parse(configText);
+
+  const cached = await idbGet(sha256);
+  if (cached) return execute(cached, input);
+
+  const shuffled = resolvers.slice().sort(() => Math.random() - 0.5);
+  const state = { matched: false };
+  let nextIndex = 0;
+
+  function launchNext() {
+    if (state.matched || nextIndex >= shuffled.length) return;
+    tryResolver(shuffled[nextIndex++], sha256, configText, input, state);
+    setTimeout(launchNext, 3000);
+  }
+  launchNext();
+}
+
+function showUI() {
+  const style = document.createElement('style');
+  style.id = 'springboard-style';
+  style.textContent = STYLES;
+  document.head.append(style);
   document.body.innerHTML = `
     <main>
       <h1>springboard</h1>
-      <textarea id="input" placeholder="<sha256>&#10;<url>&#10;<url>&#10;..." autofocus></textarea>
+      <textarea id="input" placeholder='{ "sha256": "...", "resolvers": ["https://..."], "input": ... }' autofocus></textarea>
       <button id="go">GO</button>
       <pre id="out"></pre>
-    </main>`
-  document.getElementById('go').onclick = () =>
-    springboard(document.getElementById('input').value)
+    </main>`;
+  document.getElementById('go').onclick = onGoClick;
 }
 
-const start = () => {
-  const stored = localStorage[CONFIG_KEY]
-  if (stored) springboard(stored)
-  else showUI()
+function onGoClick() {
+  springboard(document.getElementById('input').value);
 }
 
-if (document.readyState === 'loading') addEventListener('DOMContentLoaded', start)
-else start()
+async function start() {
+  const stored = await idbGet(CONFIG_KEY);
+  if (stored) springboard(stored);
+  else showUI();
+}
+
+if (document.readyState === 'loading') addEventListener('DOMContentLoaded', start);
+else start();
+
+})();
 </script>
