@@ -4,7 +4,7 @@ A single-file HTML bootstrap loader. You give it a SHA-256 hash and a list of UR
 
 ## Use
 
-Open [`index.html`](index.html) in a browser. Paste a JSON config and press **GO** (or drop a `.json` file onto the page):
+Open [Springboard](https://voltrevo.github.io/springboard/). Paste a JSON config and press **GO** (or drop a `.json` file onto the page):
 
 ```json
 {
@@ -70,10 +70,10 @@ Each is a self-contained program loadable by springboard. To run any of them san
 
 | Program | Description |
 | --- | --- |
-| [`examples/calculator.js`](examples/calculator.js) | `ddd63944328e3dba46b80a216397d322a53c230656b7da9f23f06940f0281ca5`<br><br>Four-function calculator with keyboard support. |
-| [`examples/snake.js`](examples/snake.js) | `61449ddc6b7d6fbed749825f647422cf4e34bb050a928f26dd206b8ec4d8e2fe`<br><br>Classic snake on a 20×20 grid. Arrow keys / WASD; space to restart. |
-| [`examples/paint.js`](examples/paint.js) | `877c4c501aedbfbe3353e1eefffc041384b783e694198c40d6a4fe8cc01577a9`<br><br>Pointer drawing with color picker, brush size, and clear. |
-| [`examples/store.js`](examples/store.js) | `b2298177ec94065cbf18cf7d99b9bdd5b2341fc604940083b814d092259e45bb`<br><br>App launcher: persists a list of springboard configs, mounts the chosen one in a sandboxed iframe, and includes a springboard-style "add app" form (with JSON file drop). Pre-loaded with the calculator. |
+| [`examples/calculator.js`](examples/calculator.js) | `ddd63944328e3dba46b80a216397d322a53c230656b7da9f23f06940f0281ca5`<br>Four-function calculator with keyboard support. |
+| [`examples/snake.js`](examples/snake.js) | `61449ddc6b7d6fbed749825f647422cf4e34bb050a928f26dd206b8ec4d8e2fe`<br>Classic snake on a 20×20 grid. Arrow keys / WASD; space to restart. |
+| [`examples/paint.js`](examples/paint.js) | `877c4c501aedbfbe3353e1eefffc041384b783e694198c40d6a4fe8cc01577a9`<br>Pointer drawing with color picker, brush size, and clear. |
+| [`examples/store.js`](examples/store.js) | `b2298177ec94065cbf18cf7d99b9bdd5b2341fc604940083b814d092259e45bb`<br>App launcher: persists a list of springboard configs, mounts the chosen one in a sandboxed iframe, and includes a springboard-style "add app" form (with JSON file drop). Pre-loaded with the calculator. |
 
 The base resolver pattern is `https://raw.githubusercontent.com/voltrevo/springboard/b5caf69/examples/<file>`.
 
