@@ -219,28 +219,54 @@ function reset() {
   req.onblocked = done;
 }
 
-let resetHandler = null;
+const RESET_STYLE = `
+  #springboard-reset {
+    position: fixed;
+    top: 12px;
+    right: 12px;
+    z-index: 2147483647;
+    color: #888;
+    background: transparent;
+    border: 0;
+    padding: 4px;
+    cursor: pointer;
+    transition: color 0.15s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #springboard-reset:hover { color: #222; }
+  #springboard-reset svg { display: block; width: 20px; height: 20px; }
+`;
 
-function installResetHotkey() {
-  resetHandler = (e) => {
-    if (e.key === 'Backspace' && e.shiftKey && (e.ctrlKey || e.metaKey)) {
-      e.preventDefault();
-      if (confirm('Reset springboard? This clears the cached program and config.')) reset();
-    }
-  };
-  window.addEventListener('keydown', resetHandler, true);
+function onResetClick() {
+  if (confirm('Reset springboard? This clears the cached program and config.')) reset();
+}
+
+function mountResetIcon() {
+  const style = document.createElement('style');
+  style.id = 'springboard-reset-style';
+  style.textContent = RESET_STYLE;
+  document.head.append(style);
+
+  const btn = document.createElement('button');
+  btn.id = 'springboard-reset';
+  btn.title = 'Reset springboard';
+  btn.setAttribute('aria-label', 'Reset springboard');
+  btn.innerHTML = '<' + 'svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17.65 6.35A7.95 7.95 0 0 0 12 4a8 8 0 1 0 7.74 10h-2.07A6 6 0 1 1 12 6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg' + '>';
+  btn.onclick = onResetClick;
+  document.documentElement.append(btn);
 }
 
 window.springboard = {
-  disableResetHotkey() {
-    if (!resetHandler) return;
-    window.removeEventListener('keydown', resetHandler, true);
-    resetHandler = null;
+  hideReset() {
+    document.getElementById('springboard-reset')?.remove();
+    document.getElementById('springboard-reset-style')?.remove();
   },
 };
 
 async function start() {
-  installResetHotkey();
+  mountResetIcon();
   const stored = await idbGet(CONFIG_KEY);
   if (stored) springboard(stored);
   else showUI();
