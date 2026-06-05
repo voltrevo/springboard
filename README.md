@@ -66,8 +66,8 @@ To run the `alert('hi')` example through the sandbox, nest the configs:
 
 ```json
 {
-  "sha256": "841cf7aa1eddf0787b6233bf10eb57f3f5a2675745a1620bfba41aab76df6aee",
-  "resolvers": ["https://raw.githubusercontent.com/voltrevo/springboard/b5caf69/examples/iframe.js"],
+  "sha256": "141cba31560ad1228e2497d866c34ff0f4693f3379f387fc4a2b2740736e6a9e",
+  "resolvers": ["https://raw.githubusercontent.com/voltrevo/springboard/92f8f7d/examples/iframe.js"],
   "input": {
     "sha256": "5d3a8da854949591c05bb7ff38635848e133c4a863740006317a227765446c99",
     "resolvers": ["data:text/plain,alert('hi')"],
@@ -76,7 +76,7 @@ To run the `alert('hi')` example through the sandbox, nest the configs:
 }
 ```
 
-Inner preimages are cached in a separate IndexedDB database (`springboard-meta`) so they cannot collide with the outer cache. The reset icon clears only the *outer* `springboard` database; clearing the inner cache requires deleting `springboard-meta` from devtools (or extending `iframe.js` to expose its own reset).
+Inner preimages are cached in a separate kv database (`springboard-meta`) so they cannot collide with the outer cache. Reset wipes every IndexedDB database at the loader origin, so it clears the inner cache too.
 
 ## Other examples
 
@@ -87,16 +87,16 @@ Each is a self-contained program loadable by springboard. To run any of them san
 | [`examples/calculator.js`](examples/calculator.js) | `ddd63944328e3dba46b80a216397d322a53c230656b7da9f23f06940f0281ca5`<br>Four-function calculator with keyboard support. |
 | [`examples/snake.js`](examples/snake.js) | `61449ddc6b7d6fbed749825f647422cf4e34bb050a928f26dd206b8ec4d8e2fe`<br>Classic snake on a 20×20 grid. Arrow keys / WASD; space to restart. |
 | [`examples/paint.js`](examples/paint.js) | `877c4c501aedbfbe3353e1eefffc041384b783e694198c40d6a4fe8cc01577a9`<br>Pointer drawing with color picker, brush size, and clear. |
-| [`examples/store.js`](examples/store.js) | `b2298177ec94065cbf18cf7d99b9bdd5b2341fc604940083b814d092259e45bb`<br>App launcher: persists a list of springboard configs, mounts the chosen one in a sandboxed iframe, and includes a springboard-style "add app" form (with JSON file drop). Pre-loaded with the calculator. |
+| [`examples/store.js`](examples/store.js) | `cf8a0da03a56d7df83e4c99264feb4537c3c29801c1bd46215efa607fbe597f6`<br>App launcher: persists a list of springboard configs, mounts the chosen one in a sandboxed iframe, and includes a springboard-style "add app" form (with JSON file drop). Pre-loaded with the calculator. |
 
-The base resolver pattern is `https://raw.githubusercontent.com/voltrevo/springboard/b5caf69/examples/<file>`.
+The base resolver pattern is `https://raw.githubusercontent.com/voltrevo/springboard/92f8f7d/examples/<file>`.
 
 For example, to run the app store directly:
 
 ```json
 {
-  "sha256": "b2298177ec94065cbf18cf7d99b9bdd5b2341fc604940083b814d092259e45bb",
-  "resolvers": ["https://raw.githubusercontent.com/voltrevo/springboard/b5caf69/examples/store.js"],
+  "sha256": "cf8a0da03a56d7df83e4c99264feb4537c3c29801c1bd46215efa607fbe597f6",
+  "resolvers": ["https://raw.githubusercontent.com/voltrevo/springboard/92f8f7d/examples/store.js"],
   "input": null
 }
 ```
