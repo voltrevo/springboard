@@ -1,0 +1,36 @@
+{
+  "manifest_version": 3,
+  "name": "Springboard",
+  "version": "0.1.0",
+  "description": "Bootstrap loader on the new tab page. Programs run in a sandboxed iframe and reach extension-origin capabilities through a small postMessage bridge.",
+  "chrome_url_overrides": {
+    "newtab": "newtab.html"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Springboard"
+  },
+  "permissions": [
+    "storage",
+    "unlimitedStorage",
+    "tabs",
+    "notifications",
+    "alarms",
+    "clipboardRead",
+    "clipboardWrite",
+    "cookies",
+    "downloads",
+    "identity",
+    "webNavigation",
+    "contextMenus",
+    "scripting",
+    "offscreen"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "sandbox": {
+    "pages": ["sandbox.html"]
+  },
+  "content_security_policy": {
+    "sandbox": "sandbox allow-scripts allow-forms allow-popups allow-modals allow-downloads allow-pointer-lock; script-src * 'unsafe-inline' 'unsafe-eval' blob: data:; style-src * 'unsafe-inline'; img-src * blob: data:; font-src * blob: data:; media-src * blob: data:; connect-src *; child-src * blob: data:; frame-src * blob: data:; worker-src * blob:; object-src 'none';"
+  }
+}

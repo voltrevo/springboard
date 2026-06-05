@@ -1,0 +1,106 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>springboard sandbox</title>
+<body></body>
+<script>
+// Install springboard bridge in this window. Communicates with the parent
+// (newtab.html / offscreen.html / wherever this is embedded) via postMessage.
+(() => {
+  const pending = new Map();
+  const subs = new Map();
+  let nextId = 1;
+
+  addEventListener('message', (e) => {
+    if (e.source !== parent) return;
+    const m = e.data;
+    if (!m || m.sb !== 1) return;
+    if (m.id != null) {
+      const p = pending.get(m.id);
+      if (!p) return;
+      pending.delete(m.id);
+      if (m.ok) p.resolve(m.value);
+      else p.reject(new Error(m.error));
+      return;
+    }
+    if (m.event == null) return;
+    const fn = subs.get(m.event);
+    if (!fn) return;
+    if (m.respId != null) {
+      let responded = false;
+      const sendResponse = (value) => {
+        if (responded) return;
+        responded = true;
+        parent.postMessage({ sb: 1, respondTo: m.respId, value }, '*');
+      };
+      let keepOpen = false;
+      try { keepOpen = fn(m.args[0], m.args[1], sendResponse); }
+      catch (err) { console.error(err); }
+      if (keepOpen !== true && !responded) {
+        parent.postMessage({ sb: 1, respondTo: m.respId, close: true }, '*');
+      }
+    } else {
+      try { fn(...m.args); } catch (err) { console.error(err); }
+    }
+  });
+
+  function call(op, payload) {
+    const id = nextId++;
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      parent.postMessage(Object.assign({ sb: 1, id, op }, payload), '*');
+    });
+  }
+
+  const chromeFn = (path, ...args) => call('chrome', { path, args });
+  chromeFn.on = (path, fn) => {
+    const subId = nextId++;
+    subs.set(subId, fn);
+    call('chromeOn', { subId, path }).catch((err) => {
+      subs.delete(subId);
+      throw err;
+    });
+    return () => {
+      subs.delete(subId);
+      call('chromeOff', { subId }).catch(() => {});
+    };
+  };
+
+  globalThis.springboard = {
+    kv: {
+      get:    (db, key)        => call('kv', { method: 'get', db, key }),
+      set:    (db, key, value) => call('kv', { method: 'set', db, key, value }),
+      delete: (db, key)        => call('kv', { method: 'delete', db, key }),
+      keys:   (db)             => call('kv', { method: 'keys', db }),
+      drop:   (db)             => call('kv', { method: 'drop', db }),
+    },
+    fs: {
+      read:   (path)        => call('fs', { method: 'read', path }),
+      write:  (path, data)  => call('fs', { method: 'write', path, data }),
+      delete: (path)        => call('fs', { method: 'delete', path }),
+      list:   (path)        => call('fs', { method: 'list', path }),
+      mkdir:  (path)        => call('fs', { method: 'mkdir', path }),
+    },
+    chrome: chromeFn,
+    fetch:  (url, opts) => call('fetch', { url, opts }),
+  };
+})();
+</script>
+<script>
+// Wait for the parent to deliver the program source + input, then run it.
+(() => {
+  let started = false;
+  addEventListener('message', (e) => {
+    if (e.source !== parent) return;
+    const m = e.data;
+    if (!m || m.sb !== 1 || !m.run || started) return;
+    started = true;
+    try {
+      new Function('input', m.source)(m.input);
+    } catch (err) {
+      console.error(err);
+      parent.postMessage({ sb: 1, programError: String(err && err.message || err) }, '*');
+    }
+  });
+  parent.postMessage({ sb: 1, sandboxReady: true }, '*');
+})();
+</script>
