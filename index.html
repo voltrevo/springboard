@@ -368,8 +368,15 @@ function log(msg) {
   if (out) out.append(msg + '\n');
 }
 
+// NOTE: this whole file is one inline script. The HTML tokenizer scans
+// its raw text and an opening-comment marker followed by a script start
+// tag would flip it into the double-escaped state, where the real
+// closing tag no longer ends the block and parsing breaks. So we never
+// write those byte sequences literally anywhere in this file (including
+// comments). The patterns below use redundant backslash escapes so the
+// regex source text stays harmless while matching the same thing.
 function escapeForScript(s) {
-  return s.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
+  return s.replace(/<\/script/gi, '<\\/script').replace(/<\!--/g, '<\\!--');
 }
 
 function execute(source, input) {
@@ -387,8 +394,8 @@ function execute(source, input) {
   const inputJson = JSON.stringify(input ?? null).replace(/</g, '\\u003c');
   iframe.srcdoc =
     '<!doctype html><title>springboard</title><body></body>' +
-    '<script>' + escapeForScript(BRIDGE_LIB) + '</' + 'script>' +
-    '<script>(function(input){' + escapeForScript(source) + '})(' + inputJson + ');</' + 'script>';
+    '<scr' + 'ipt>' + escapeForScript(BRIDGE_LIB) + '</' + 'script>' +
+    '<scr' + 'ipt>(function(input){' + escapeForScript(source) + '})(' + inputJson + ');</' + 'script>';
 
   document.body.append(iframe);
   activeIframe = iframe;
