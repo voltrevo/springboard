@@ -83,33 +83,280 @@ const STYLES = `
   a.gh svg { display: block; width: 22px; height: 22px; }
 `;
 
-function openDB() {
+// -- IndexedDB key-value (single-store) on any db name -------------------
+
+function openKvDB(dbName) {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
+    const req = indexedDB.open(dbName, 1);
     req.onupgradeneeded = () => req.result.createObjectStore(STORE);
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
 }
 
-async function idbGet(key) {
-  const db = await openDB();
+async function kvGet(dbName, key) {
+  const db = await openKvDB(dbName);
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction(STORE).objectStore(STORE).get(key);
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  } finally { db.close(); }
+}
+
+async function kvSet(dbName, key, value) {
+  const db = await openKvDB(dbName);
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
+
+async function kvDelete(dbName, key) {
+  const db = await openKvDB(dbName);
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  } finally { db.close(); }
+}
+
+async function kvKeys(dbName) {
+  const db = await openKvDB(dbName);
+  try {
+    return await new Promise((resolve, reject) => {
+      const req = db.transaction(STORE).objectStore(STORE).getAllKeys();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  } finally { db.close(); }
+}
+
+function kvDrop(dbName) {
   return new Promise((resolve, reject) => {
-    const req = db.transaction(STORE).objectStore(STORE).get(key);
-    req.onsuccess = () => resolve(req.result);
+    const req = indexedDB.deleteDatabase(dbName);
+    req.onsuccess = () => resolve();
     req.onerror = () => reject(req.error);
+    req.onblocked = () => {};
   });
 }
 
-async function idbSet(key, value) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
+// -- OPFS path API -------------------------------------------------------
+
+function splitPath(path) {
+  return String(path || '').split('/').filter(Boolean);
 }
+
+async function fsResolveDir(parts, { create = false } = {}) {
+  let dir = await navigator.storage.getDirectory();
+  for (const p of parts) dir = await dir.getDirectoryHandle(p, { create });
+  return dir;
+}
+
+async function fsRead(path) {
+  const parts = splitPath(path);
+  if (!parts.length) throw new Error('fs.read: empty path');
+  const name = parts.pop();
+  const dir = await fsResolveDir(parts);
+  const fh = await dir.getFileHandle(name);
+  const file = await fh.getFile();
+  return await file.arrayBuffer();
+}
+
+async function fsWrite(path, data) {
+  const parts = splitPath(path);
+  if (!parts.length) throw new Error('fs.write: empty path');
+  const name = parts.pop();
+  const dir = await fsResolveDir(parts, { create: true });
+  const fh = await dir.getFileHandle(name, { create: true });
+  const w = await fh.createWritable();
+  await w.write(data);
+  await w.close();
+}
+
+async function fsDelete(path) {
+  const parts = splitPath(path);
+  if (!parts.length) {
+    const root = await navigator.storage.getDirectory();
+    for await (const name of root.keys()) await root.removeEntry(name, { recursive: true });
+    return;
+  }
+  const name = parts.pop();
+  const dir = await fsResolveDir(parts);
+  await dir.removeEntry(name, { recursive: true });
+}
+
+async function fsList(path) {
+  const dir = await fsResolveDir(splitPath(path));
+  const out = [];
+  for await (const [name, handle] of dir.entries()) out.push({ name, kind: handle.kind });
+  return out;
+}
+
+async function fsMkdir(path) {
+  await fsResolveDir(splitPath(path), { create: true });
+}
+
+// -- bridge dispatcher ---------------------------------------------------
+
+let activeIframe = null;
+
+window.addEventListener('message', async (e) => {
+  if (!activeIframe || e.source !== activeIframe.contentWindow) return;
+  const m = e.data;
+  if (!m || m.sb !== 1 || m.id == null) return;
+
+  let value, ok = true, errorMsg;
+  try {
+    switch (m.op) {
+      case 'kv': {
+        if (m.method === 'get') value = await kvGet(m.db, m.key);
+        else if (m.method === 'set') value = await kvSet(m.db, m.key, m.value);
+        else if (m.method === 'delete') value = await kvDelete(m.db, m.key);
+        else if (m.method === 'keys') value = await kvKeys(m.db);
+        else if (m.method === 'drop') value = await kvDrop(m.db);
+        else throw new Error('kv: unknown method ' + m.method);
+        break;
+      }
+      case 'fs': {
+        if (m.method === 'read') value = await fsRead(m.path);
+        else if (m.method === 'write') value = await fsWrite(m.path, m.data);
+        else if (m.method === 'delete') value = await fsDelete(m.path);
+        else if (m.method === 'list') value = await fsList(m.path);
+        else if (m.method === 'mkdir') value = await fsMkdir(m.path);
+        else throw new Error('fs: unknown method ' + m.method);
+        break;
+      }
+      case 'fetch': {
+        const res = await fetch(m.url, m.opts || undefined);
+        const body = await res.arrayBuffer();
+        value = {
+          status: res.status,
+          statusText: res.statusText,
+          ok: res.ok,
+          url: res.url,
+          redirected: res.redirected,
+          type: res.type,
+          headers: [...res.headers],
+          body,
+        };
+        break;
+      }
+      case 'chrome':
+      case 'chromeOn':
+      case 'chromeOff':
+        throw new Error('chrome.* APIs are not available on this loader');
+      case 'hideReset':
+        document.getElementById('springboard-reset')?.remove();
+        document.getElementById('springboard-reset-style')?.remove();
+        value = null;
+        break;
+      default:
+        throw new Error('unknown op: ' + m.op);
+    }
+  } catch (err) {
+    ok = false;
+    errorMsg = String(err && err.message || err);
+  }
+
+  try {
+    if (ok) e.source.postMessage({ sb: 1, id: m.id, ok: true, value }, '*');
+    else e.source.postMessage({ sb: 1, id: m.id, ok: false, error: errorMsg }, '*');
+  } catch {}
+});
+
+// -- bridge library injected into the iframe srcdoc ----------------------
+
+const BRIDGE_LIB = `(() => {
+  const pending = new Map();
+  const subs = new Map();
+  let nextId = 1;
+
+  addEventListener('message', (e) => {
+    if (e.source !== parent) return;
+    const m = e.data;
+    if (!m || m.sb !== 1) return;
+    if (m.id != null) {
+      const p = pending.get(m.id);
+      if (!p) return;
+      pending.delete(m.id);
+      if (m.ok) p.resolve(m.value);
+      else p.reject(new Error(m.error));
+      return;
+    }
+    if (m.event == null) return;
+    const fn = subs.get(m.event);
+    if (!fn) return;
+    if (m.respId != null) {
+      let responded = false;
+      const sendResponse = (value) => {
+        if (responded) return;
+        responded = true;
+        parent.postMessage({ sb: 1, respondTo: m.respId, value }, '*');
+      };
+      let keepOpen = false;
+      try { keepOpen = fn(m.args[0], m.args[1], sendResponse); }
+      catch (err) { console.error(err); }
+      if (keepOpen !== true && !responded) {
+        parent.postMessage({ sb: 1, respondTo: m.respId, close: true }, '*');
+      }
+    } else {
+      try { fn(...m.args); } catch (err) { console.error(err); }
+    }
+  });
+
+  function call(op, payload) {
+    const id = nextId++;
+    return new Promise((resolve, reject) => {
+      pending.set(id, { resolve, reject });
+      parent.postMessage(Object.assign({ sb: 1, id, op }, payload), '*');
+    });
+  }
+
+  const chromeFn = (path, ...args) => call('chrome', { path, args });
+  chromeFn.on = (path, fn) => {
+    const subId = nextId++;
+    subs.set(subId, fn);
+    call('chromeOn', { subId, path }).catch((err) => {
+      subs.delete(subId);
+      throw err;
+    });
+    return () => {
+      subs.delete(subId);
+      call('chromeOff', { subId }).catch(() => {});
+    };
+  };
+
+  globalThis.springboard = {
+    kv: {
+      get:    (db, key)        => call('kv', { method: 'get', db, key }),
+      set:    (db, key, value) => call('kv', { method: 'set', db, key, value }),
+      delete: (db, key)        => call('kv', { method: 'delete', db, key }),
+      keys:   (db)             => call('kv', { method: 'keys', db }),
+      drop:   (db)             => call('kv', { method: 'drop', db }),
+    },
+    fs: {
+      read:   (path)        => call('fs', { method: 'read', path }),
+      write:  (path, data)  => call('fs', { method: 'write', path, data }),
+      delete: (path)        => call('fs', { method: 'delete', path }),
+      list:   (path)        => call('fs', { method: 'list', path }),
+      mkdir:  (path)        => call('fs', { method: 'mkdir', path }),
+    },
+    chrome: chromeFn,
+    fetch:  (url, opts) => call('fetch', { url, opts }),
+    hideReset: () => call('hideReset', {}),
+  };
+})();`;
+
+// -- loader --------------------------------------------------------------
 
 async function sha256hex(text) {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(text));
@@ -121,16 +368,30 @@ function log(msg) {
   if (out) out.append(msg + '\n');
 }
 
-function tearDownUI() {
+function escapeForScript(s) {
+  return s.replace(/<\/script/gi, '<\\/script').replace(/<!--/g, '<\\!--');
+}
+
+function execute(source, input) {
   document.getElementById('springboard-style')?.remove();
   document.body.removeEventListener('dragover', onDragOver);
   document.body.removeEventListener('drop', onDrop);
   document.body.innerHTML = '';
-}
+  document.body.style.cssText = 'margin:0;';
+  document.documentElement.style.cssText = 'height:100%;';
 
-function execute(source, input) {
-  tearDownUI();
-  setTimeout(() => new Function('input', source)(input), 35);
+  const iframe = document.createElement('iframe');
+  iframe.sandbox = 'allow-scripts allow-modals allow-popups allow-forms allow-downloads';
+  iframe.allow = 'camera; microphone; geolocation; clipboard-read; clipboard-write; fullscreen; gamepad';
+  iframe.style.cssText = 'border:0;width:100vw;height:100vh;display:block;';
+  const inputJson = JSON.stringify(input ?? null).replace(/</g, '\\u003c');
+  iframe.srcdoc =
+    '<!doctype html><title>springboard</title><body></body>' +
+    '<script>' + escapeForScript(BRIDGE_LIB) + '</' + 'script>' +
+    '<script>(function(input){' + escapeForScript(source) + '})(' + inputJson + ');</' + 'script>';
+
+  document.body.append(iframe);
+  activeIframe = iframe;
 }
 
 async function tryResolver(url, sha256, configText, input, state) {
@@ -140,8 +401,8 @@ async function tryResolver(url, sha256, configText, input, state) {
     if (state.matched) return;
     if (await sha256hex(body) !== sha256) return log('bad ' + url);
     state.matched = true;
-    await idbSet(sha256, body);
-    await idbSet(CONFIG_KEY, configText);
+    await kvSet(DB_NAME, sha256, body);
+    await kvSet(DB_NAME, CONFIG_KEY, configText);
     log('match ' + url);
     execute(body, input);
   } catch {
@@ -152,7 +413,7 @@ async function tryResolver(url, sha256, configText, input, state) {
 async function springboard(configText) {
   const { sha256, resolvers, input } = JSON.parse(configText);
 
-  const cached = await idbGet(sha256);
+  const cached = await kvGet(DB_NAME, sha256);
   if (cached) return execute(cached, input);
 
   const shuffled = resolvers.slice().sort(() => Math.random() - 0.5);
@@ -211,12 +472,22 @@ async function onDrop(e) {
   springboard(text);
 }
 
-function reset() {
-  const req = indexedDB.deleteDatabase(DB_NAME);
-  const done = () => location.reload();
-  req.onsuccess = done;
-  req.onerror = done;
-  req.onblocked = done;
+async function reset() {
+  const dbs = await indexedDB.databases?.() ?? [{ name: DB_NAME }];
+  await Promise.all(dbs.map(({ name }) => new Promise((resolve) => {
+    if (!name) return resolve();
+    const req = indexedDB.deleteDatabase(name);
+    req.onsuccess = () => resolve();
+    req.onerror = () => resolve();
+    req.onblocked = () => {};
+  })));
+  try {
+    const root = await navigator.storage.getDirectory();
+    for await (const name of root.keys()) {
+      try { await root.removeEntry(name, { recursive: true }); } catch {}
+    }
+  } catch {}
+  location.reload();
 }
 
 const RESET_STYLE = `
@@ -240,7 +511,7 @@ const RESET_STYLE = `
 `;
 
 function onResetClick() {
-  if (confirm('Reset springboard? This clears the cached program and config.')) reset();
+  if (confirm('Reset springboard? Wipes all stored data.')) reset();
 }
 
 function mountResetIcon() {
@@ -258,16 +529,9 @@ function mountResetIcon() {
   document.documentElement.append(btn);
 }
 
-window.springboard = {
-  hideReset() {
-    document.getElementById('springboard-reset')?.remove();
-    document.getElementById('springboard-reset-style')?.remove();
-  },
-};
-
 async function start() {
   mountResetIcon();
-  const stored = await idbGet(CONFIG_KEY);
+  const stored = await kvGet(DB_NAME, CONFIG_KEY);
   if (stored) springboard(stored);
   else showUI();
 }

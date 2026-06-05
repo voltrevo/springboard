@@ -338,6 +338,10 @@ window.addEventListener('message', async (e) => {
       case 'fetch':
         value = await privilegedFetch(m.url, m.opts);
         break;
+      case 'hideReset':
+        // No-op in the extension — reset lives in the popup.
+        value = null;
+        break;
       default:
         throw new Error('unknown op: ' + m.op);
     }

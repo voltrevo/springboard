@@ -2,7 +2,6 @@
 // chosen one inside a sandboxed iframe. Reload returns to the launcher.
 
 const DB_NAME = 'springboard-store';
-const STORE = 'kv';
 
 const SEED_APPS = [
   {
@@ -18,40 +17,14 @@ const SEED_APPS = [
   },
 ];
 
-function openDB() {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open(DB_NAME, 1);
-    req.onupgradeneeded = () => req.result.createObjectStore(STORE);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function idbGet(key) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const req = db.transaction(STORE).objectStore(STORE).get(key);
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
-  });
-}
-
-async function idbSet(key, value) {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const tx = db.transaction(STORE, 'readwrite');
-    tx.objectStore(STORE).put(value, key);
-    tx.oncomplete = () => resolve();
-    tx.onerror = () => reject(tx.error);
-  });
-}
+const kv = springboard.kv;
 
 async function getApps() {
-  return (await idbGet('apps')) ?? SEED_APPS;
+  return (await kv.get(DB_NAME, 'apps')) ?? SEED_APPS;
 }
 
 async function saveApps(apps) {
-  await idbSet('apps', apps);
+  await kv.set(DB_NAME, 'apps', apps);
 }
 
 async function sha256hex(text) {
@@ -65,14 +38,14 @@ function escapeForScript(s) {
 
 async function fetchVerified(config) {
   const cacheKey = 'cache:' + config.sha256;
-  const cached = await idbGet(cacheKey);
+  const cached = await kv.get(DB_NAME, cacheKey);
   if (cached) return cached;
   const order = config.resolvers.slice().sort(() => Math.random() - 0.5);
   for (const url of order) {
     try {
       const body = await (await fetch(url)).text();
       if ((await sha256hex(body)) === config.sha256) {
-        await idbSet(cacheKey, body);
+        await kv.set(DB_NAME, cacheKey, body);
         return body;
       }
     } catch {}
